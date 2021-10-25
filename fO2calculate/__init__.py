@@ -17,6 +17,21 @@ import pandas as pd
 import fO2calculate.core
 import fO2calculate.activitycoefficients
 import fO2calculate.interactionparameters
+
 import fO2calculate.batchfile
-from fO2calculate.batchfile import BatchFile
+
 import fO2calculate.sample_class
+from fO2calculate.sample_class import Sample
+
+import fO2calculate.fluid_class
+from fO2calculate.fluid_class import Fluid
+
+import fO2calculate.gasplots
+from fO2calculate.gasplots import make_plots
+from fO2calculate.gasplots import make_comparison_plots
+
+import fO2calculate.calculate 
+from fO2calculate.calculate import calculate_dIW
+
+import fO2calculate.batch_calculate
+from fO2calculate.batch_calculate import BatchFile

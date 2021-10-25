@@ -1,4 +1,5 @@
 import pandas as pd
+import warnings as w
 
 from fO2calculate import core
 from fO2calculate import sample_class
@@ -20,10 +21,11 @@ def clean(data):
     _data = data.copy()
 
     _data = _data.apply(pd.to_numeric, errors='coerce')
-    _data = _data.fillna(0) #fill in any missing data with 0's
-    _data = _data.dropna(axis=1, how='all') #drop all columns that contain no data
-    _data = _data.loc[:, (data != 0).any(axis=0)] #drop all columns that contain all zeroes
-    _data = _data.loc[(_data!=0).any(axis=1)] #drop all rows that contain all zeroes
+    _data = _data.fillna(0) # fill in any missing data with 0's
+    _data = _data.dropna(axis=1, how='all') # drop all columns that contain no data
+    _data = _data.loc[:, (data != 0).any(axis=0)] # drop all columns that contain all zeroes
+    _data = _data.loc[(_data!=0).any(axis=1)] # drop all rows that contain all zeroes
+    _data = _data.groupby(level=0, axis=1).last() # if column name duplicated, keep final instance
 
     return _data
 
@@ -173,18 +175,6 @@ class BatchFile(object):
         if units == "mol":
             data = self._molOxides_to_wtpercentOxides(data)
             data = self._molCations_to_wtpercentOxides(data)
-
-        for oxide in core.oxides:
-            if oxide in data.columns:
-                pass
-            else:
-                data[oxide] = 0.0
-
-        for elem in core.elements:
-            if elem in data.columns:
-                pass 
-            else:
-                data[elem] = 0.0
 
         for column in data:
             if column in core.oxides:
@@ -385,7 +375,7 @@ class BatchFile(object):
 
         # Grab all non-compositional data
         non_compositional_data = data.filter(
-                       [col for col in data.columns if col not in core.oxides])
+                       [col for col in data.columns if col not in core.oxides_and_elements])
 
         # concatenate both compositional and non-compositional dataframes
         # into one
@@ -399,7 +389,7 @@ class BatchFile(object):
 
     def get_sample_composition(self, samplename, species=None,
                                normalization=None, units=None,
-                               asSampleClass=False):
+                               asSampleClass=False, how='combined'):
         """
         Returns oxide composition of a single sample from a user-imported file
         as a dictionary
@@ -437,6 +427,12 @@ class BatchFile(object):
             class, with default options. In this case any normalization
             instructions will be ignored.
 
+        how:    str
+            Specify which composition to return. Either: 'combined' for both metal and silicate
+            composition (default); 'metal' for only the metal composition; 'silicate' for only
+            the silicate composition. Intended to be used by get_metal_composition() and 
+            get_silicate_composition() functions.
+
         Returns
         -------
         dictionary, float, or sample_class.Sample object
@@ -461,24 +457,68 @@ class BatchFile(object):
         my_sample = pd.DataFrame(data.loc[samplename])
         sample_dict = (my_sample.to_dict()[samplename])
         sample_oxides = {}
+        sample_elements = {}
+        sample_combined = {}
         for item, value in sample_dict.items():
             if item in core.oxides:
                 sample_oxides.update({item: value})
+                sample_combined.update({item: value})
+            if item in core.elements:
+                sample_elements.update({item: value})
+                sample_combined.update({item: value})
 
-        _sample = sample_class.Sample(sample_oxides)
+        _sample = sample_class.Sample(sample_combined)
+        _sample_silicate = sample_class.Sample(sample_oxides)
+        _sample_metal = sample_class.Sample(sample_elements)
 
         # Get sample composition in terms of any species, units, and
         # normalization passed
         return_sample = _sample.get_composition(species=species, units=units,
                                                 normalization=normalization)
+        return_silicate = _sample_silicate.get_composition(species=species,
+                                                           units=units,
+                                                           normalization=normalization)
+        return_metal = _sample_metal.get_composition(species=species, units=units,
+                                                     normalization=normalization)
 
         if asSampleClass:
-            return sample_class.Sample(return_sample)
+            if how is 'combined':
+                return sample_class.Sample(return_sample)
+            elif how is 'silicate':
+                return sample_class.Sample(return_silicate)
+            elif how is 'metal':
+                return sample_class.Sample(return_metal)
         else:
             if species is None:
-                return dict(return_sample)
+                if how is 'combined':
+                    return dict(return_sample)
+                elif how is 'silicate':
+                    return dict(return_silicate)
+                elif how is 'metal':
+                    return dict(return_metal)
             elif isinstance(species, str):
-                return return_sample
+                if how is 'combined':
+                    return return_sample
+                elif how is 'silicate':
+                    return return_silicate
+                elif how is 'metal':
+                    return return_metal
+
+    def get_silicate_composition(self, **kwargs):
+        """
+        Returns only the silicate composition. Inherits all arguments from
+        get_sample_composition()
+        """
+
+        return self.get_composition(how='silicate', **kwargs)
+
+    def get_metal_composition(self, **kwargs):
+        """
+        Returns only the metal composition. Inherits all arguments from
+        get_sample_composition()
+        """
+
+        return self.get_composition(how='metal', **kwargs)
 
     def _molOxides_to_wtpercentOxides(self, data):
         for i, row in data.iterrows():

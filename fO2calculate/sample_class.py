@@ -10,7 +10,9 @@ class Sample(object):
     """Based on the sample_class module of VESIcal.
 
     The sample class stores compositional information for samples, and contains methods for
-    normalization and other compositional calculations.
+    normalization and other compositional calculations. Designed to understand both silicate
+    melt data and metal alloy data in a single sample. Silicate melt data must be in terms
+    of oxides, and metal alloy data must be in terms of elements.
     """
 
     def __init__(self, composition, units='wtpt', default_normalization='none',
@@ -64,6 +66,13 @@ class Sample(object):
         else:
             raise core.InputError("Units must be one of 'wtpt' or 'mol'.")
 
+        # check if ambigous volatiles are passed in, warn user
+        ambiguous_voltiles = ['Cl', 'F', 'S']
+        for vol in ambiguous_voltiles:
+            if vol in composition.index:
+                w.warn("Element " + str(vol) + " was passed as part of sample composition. This" +
+                       " will be assumed to be part of the metal composition.")
+
         self.set_default_normalization(default_normalization)
         self.set_default_units(default_units)
 
@@ -105,16 +114,18 @@ class Sample(object):
             raise core.InputError("The units must be one of 'wtpt' or 'mol'.")
 
     def get_composition(self, species=None, normalization=None, units=None,
-                        exclude_volatiles=False, asSampleClass=False, oxide_masses={}):
-        """ Returns the composition in the format requested, normalized as requested.
+                        exclude_volatiles=False, asSampleClass=False, oxide_masses={},
+                        how='combined'):
+        """ Returns the silicate and metal composition in the format requested, normalized as
+        requested.
 
         Parameters
         ----------
         species:    NoneType or str
             The name of the oxide or cation to return the concentration of. If NoneType (default)
             the whole composition will be returned as a pandas.Series. If an oxide is passed, the
-            value in wtpt will be returned unless units is set to 'mol_oxides', even if the
-            default units for the sample object are mol_oxides. If an element is passed, the
+            value in wtpt will be returned unless units is set to 'mol', even if the
+            default units for the sample object are mol. If an element is passed, the
             concentration will be returned as mol_cations, unless 'mol_singleO' is specified as
             units, even if the default units for the sample object are mol_singleO. Unless
             normalization is specified in the method call, none will be applied.
@@ -151,6 +162,12 @@ class Sample(object):
             might be useful for recreating other implementations of models that use slightly
             different molecular masses. The default values in VESIcal are given to 3 dp.
 
+        how:    str
+            Specify which composition to return. Either: 'combined' for both metal and silicate
+            composition (default); 'metal' for only the metal composition; 'silicate' for only
+            the silicate composition. Intended to be used by get_metal_composition() and 
+            get_silicate_composition() functions.
+
         Returns
         -------
         pandas.Series, float, or Sample class
@@ -171,13 +188,12 @@ class Sample(object):
             units = self.default_units
 
         # Check whether to exclude volatiles
-        # note that here composition is gotten as wtpt_oxides
+        # note that here composition is gotten as wtpt
         if exclude_volatiles:
             composition = self._composition.copy()
-            if 'H2O' in composition.index:
-                composition = composition.drop(index='H2O')
-            if 'CO2' in composition.index:
-                composition = composition.drop(index='CO2')
+            for vol in core.all_volatiles:
+                if vol in composition.index:
+                    composition = composition.drop(index=vol)
         else:
             composition = self._composition.copy()
 
@@ -217,16 +233,49 @@ class Sample(object):
             raise core.InputError("The normalization method must be one of 'none', 'standard', "
                                   "'fixedvolatiles', or 'additionalvolatiles'.")
 
-        if species is None:
+        if how is "combined":
+            if species is None:
+                if asSampleClass is False:
+                    return final
+                else:
+                    return Sample(final)
+            elif isinstance(species, str):
+                if asSampleClass:
+                    w.warn("Cannot return single species as Sample class. Returning as float.",
+                           RuntimeWarning, stacklevel=2)
+                return final[species]
+
+        elif how is "silicate":
+            for i in final.index:
+                if i not in core.silicate_oxides:
+                    final = final.drop(index=i)
             if asSampleClass is False:
                 return final
             else:
                 return Sample(final)
-        elif isinstance(species, str):
-            if asSampleClass:
-                w.warn("Cannot return single species as Sample class. Returning as float.",
-                       RuntimeWarning, stacklevel=2)
-            return final[species]
+
+        elif how is "metal":
+            for i in final.index:
+                if i not in core.metal_elements:
+                    final = final.drop(index=i)
+            if asSampleClass is False:
+                return final
+            else:
+                return Sample(final)
+
+    def get_silicate_composition(self, **kwargs):
+        """
+        Returns only the silicate composition. Inherits all arguments from get_composition()
+        """
+
+        return self.get_composition(how='silicate', **kwargs)
+
+    def get_metal_composition(self, **kwargs):
+        """
+        Returns only the metal composition. Inherits all arguments from get_composition()
+        """
+
+        return self.get_composition(how='metal', **kwargs)
 
     def change_composition(self, new_composition, units='wtpt', inplace=True):
         """
@@ -275,8 +324,7 @@ class Sample(object):
             self._composition = self._mol_to_wtpercent(_comp)
 
         else:
-            raise core.InputError("Units must be one of 'wtpt_oxides', 'mol_oxides', or "
-                                  "'mol_cations'.")
+            raise core.InputError("Units must be one of 'wtpt' or 'mol'.")
 
         return self
 
@@ -342,13 +390,19 @@ class Sample(object):
         pandas.Series
             Normalized oxides in wt%.
         """
-        comp = composition.copy()
-        comp = dict(comp)
+        ox_comp = self.get_silicate_composition()
+        ox_comp = dict(ox_comp)
+        elem_comp = self.get_metal_composition()
+        elem_comp = dict(elem_comp)
 
         if units == 'wtpt':
-            normed = pd.Series({k: 100.0 * v / sum(comp.values()) for k, v in comp.items()})
+            normed_ox = {k: 100.0 * v / sum(ox_comp.values()) for k, v in ox_comp.items()}
+            normed_elem = {k: 100.0 * v / sum(elem_comp.values()) for k, v in elem_comp.items()}
+            normed = pd.Series({**normed_ox, **normed_elem})
         elif units == 'mol':
-            normed = pd.Series({k: v / sum(comp.values()) for k, v in comp.items()})
+            normed_ox = {k: v / sum(ox_comp.values()) for k, v in ox_comp.items()}
+            normed_elem = {k: v / sum(elem_comp.values()) for k, v in elem_comp.items()}
+            normed = pd.Series({**normed_ox, **normed_elem})
         else:
             raise core.InputError("Units must be one of 'wtpt' or 'mol'.")
 
@@ -377,35 +431,53 @@ class Sample(object):
         pandas Series
             Normalized major element oxides.
         """
-        comp = composition.copy()
-        normalized = pd.Series({}, dtype=float)
-        volatiles = 0
-        if 'CO2' in list(comp.index):
-            volatiles += comp['CO2']
-        if 'H2O' in list(comp.index):
-            volatiles += comp['H2O']
+        ox_comp = self.get_silicate_composition()
+        ox_comp = dict(ox_comp)
+        elem_comp = self.get_metal_composition()
+        elem_comp = dict(elem_comp)
+        ox_norm = {}
+        elem_norm = {}
 
-        for ox in list(comp.index):
-            if ox != 'H2O' and ox != 'CO2':
-                normalized[ox] = comp[ox]
+        ox_vols = 0
+        elem_vols = 0
+        for vol in core.all_volatiles:
+            if vol in ox_comp.keys():
+                ox_vols += ox_comp[vol]
+            if vol in elem_comp.keys():
+                elem_vols += elem_comp[vol]
 
-        if units == 'wtpt':
-            normalized = normalized/np.sum(normalized)*(100-volatiles)
-        elif units == 'mol':
-            normalized = normalized/np.sum(normalized)*(1-volatiles)
+            for k, v in ox_comp.items():
+                if k != vol:
+                    ox_norm.update({k: v})
+
+            for k, v in elem_comp.items():
+                if k != vol:
+                    elem_norm.update({k: v})
+
+        if units is 'wtpt':
+            ox_norm = {k: (100-ox_vols) * v / (sum(ox_norm.values())-ox_vols) for k, v in ox_norm.items()}
+            elem_norm = {k: (100-
+                             elem_vols) * v / (sum(elem_norm.values())-elem_vols) for k, v in elem_norm.items()}
+        elif units is 'mol':
+            ox_norm = {k: (1-ox_vols) * v / (sum(ox_norm.values())-ox_vols) for k, v in ox_norm.items()}
+            elem_norm = {k: (1-
+                             elem_vols) * v / (sum(elem_norm.values())-elem_vols) for k, v in elem_norm.items()}
         else:
             raise core.InputError("Units must be one of 'wtpt' or 'mol'.")
 
-        if 'CO2' in list(comp.index):
-            normalized['CO2'] = comp['CO2']
-        if 'H2O' in list(comp.index):
-            normalized['H2O'] = comp['H2O']
+        for vol in core.all_volatiles:
+            if vol in ox_norm.keys():
+                ox_norm.update({vol: ox_comp[vol]})
+            if vol in elem_norm.keys():
+                elem_norm.update({vol: elem_comp[vol]})
 
-        return normalized
+        final = pd.Series({**ox_norm, **elem_norm})
 
-    def _normalize_AdditionalVolatiles(self, composition, units='wtpt_oxides'):
+        return final
+
+    def _normalize_AdditionalVolatiles(self, composition, units='wtpt'):
         """
-        Normalises major element oxide wt% to 100%, assuming it is volatile-free. If H2O or CO2
+        Normalises major element oxide wt% to 100%, assuming it is volatile-free. If volatiles
         are passed to the function, their un-normalized values will be retained in addition to the
         normalized non-volatile oxides, summing to >100%.
 
@@ -426,25 +498,49 @@ class Sample(object):
         pandas.Series
             Normalized major element oxides.
         """
-        comp = composition.copy()
-        normalized = pd.Series({}, dtype=float)
-        for ox in list(comp.index):
-            if ox != 'H2O' and ox != 'CO2':
-                normalized[ox] = comp[ox]
+        ox_comp = self.get_silicate_composition()
+        ox_comp = dict(ox_comp)
+        elem_comp = self.get_metal_composition()
+        elem_comp = dict(elem_comp)
+        ox_norm = {}
+        elem_norm = {}
 
-        if units == 'wtpt':
-            normalized = normalized/np.sum(normalized)*100
-        elif units == 'mol':
-            normalized = normalized/np.sum(normalized)
+        ox_vols = 0
+        elem_vols = 0
+        for vol in core.all_volatiles:
+            if vol in ox_comp.keys():
+                ox_vols += ox_comp[vol]
+            if vol in elem_comp.keys():
+                elem_vols += elem_comp[vol]
+
+            for k, v in ox_comp.items():
+                if k != vol:
+                    ox_norm.update({k: v})
+
+            for k, v in elem_comp.items():
+                if k != vol:
+                    elem_norm.update({k: v})
+
+        if units is 'wtpt':
+            ox_norm = {k: 100 * v / (sum(ox_norm.values()) - ox_vols) for k, v in ox_norm.items()}
+            elem_norm = {k: 100 * v / (sum(elem_norm.values()) - 
+                                       elem_vols) for k, v in elem_norm.items()}
+        elif units is 'mol':
+            ox_norm = {k: 100 * v / (sum(ox_norm.values()) - ox_vols) for k, v in ox_norm.items()}
+            elem_norm = {k: 100 * v / (sum(elem_norm.values()) -
+                                       elem_vols) for k, v in elem_norm.items()}
         else:
             raise core.InputError("Units must be one of 'wtpt' or 'mol'.")
 
-        if 'H2O' in comp.index:
-            normalized['H2O'] = comp['H2O']
-        if 'CO2' in comp.index:
-            normalized['CO2'] = comp['CO2']
+        for vol in core.all_volatiles:
+            if vol in ox_norm.keys():
+                ox_norm.update({vol: ox_comp[vol]})
+            if vol in elem_norm.keys():
+                elem_norm.update({vol: elem_comp[vol]})
 
-        return normalized
+        final = pd.Series({**ox_norm, **elem_norm})
+
+        return final
 
     def _wtpercent_to_mol(self, composition, oxideMass=core.oxideMass, 
                           elementMass=core.elementMass):
@@ -471,20 +567,27 @@ class Sample(object):
         pandas.Series
             Molar proportions of major element oxides, normalised to 1.
         """
-        mols = {}
+        mols_ox = {}
+        mols_elem = {}
         comp = composition.copy()
         specieslist = list(comp.index)
 
         for spec in specieslist:
-            if spec in core.oxides:
-                mols[spec] = comp[spec]/oxideMass[spec]
-            if spec in core.elements:
-                mols[spec] = comp[spec]/elementMass[spec]
+            if spec in core.silicate_oxides:
+                mols_ox[spec] = comp[spec]/oxideMass[spec]
+            if spec in core.metal_elements:
+                mols_elem[spec] = comp[spec]/elementMass[spec]
 
-        mols = pd.Series(mols)
-        mols = mols/mols.sum()
+        # do normalization
+        ox_sum = sum(mols_ox.values())
+        ox_final = {k: v / ox_sum for k, v in mols_ox.items()}
+        elem_sum = sum(mols_elem.values())
+        elem_final = {k: v / elem_sum for k, v in mols_elem.items()}
 
-        return mols
+        combined = {**ox_final, **elem_final}
+        combined = pd.Series(combined)
+
+        return combined
 
     def _mol_to_wtpercent(self, composition, oxideMass=core.oxideMass,
                           elementMass=core.elementMass):
@@ -509,17 +612,24 @@ class Sample(object):
         pandas.Series
             wt% oxides normalized to 100 wt%.
         """
-        wtpt = {}
+        wtpt_ox = {}
+        wtpt_elem = {}
         comp = composition.copy()
         specieslist = list(comp.index)
 
         for spec in specieslist:
-            if spec in core.oxides:
-                wtpt[spec] = comp[spec]*oxideMass[spec]
-            if spec in core.elements:
-                wtpt[spec] = comp[spec]*elementMass[spec]
+            if spec in core.silicate_oxides:
+                wtpt_ox[spec] = comp[spec]*oxideMass[spec]
+            if spec in core.metal_elements:
+                wtpt_elem[spec] = comp[spec]*elementMass[spec]
 
-        wtpt = pd.Series(wtpt)
-        wtpt = wtpt/wtpt.sum()*100
+        # do normalization
+        ox_sum = sum(wtpt_ox.values())
+        ox_final = {k: v / ox_sum for k, v in wtpt_ox.items()}
+        elem_sum = sum(wtpt_elem.values())
+        elem_final = {k: v / elem_sum for k, v in wtpt_elem.items()}
 
-        return wtpt
+        combined = {**ox_final, **elem_final}
+        combined = pd.Series(combined)
+
+        return combined
