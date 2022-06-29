@@ -1,2 +1,2 @@
 # MetalSilicateFO2
-Python code and accompanying jupyter notebook to calculate non-ideal activity coefficients for Fe in Fe-rich metallic melt and FeO in silicate melt, plus subsequent fO2 calculator.
+A python library for calculating the oxygen fugacity of metal-silicate systems using non-ideal activities for Fe-FeO and Si-SiO2 equilibria.
