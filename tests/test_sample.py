@@ -1,5 +1,5 @@
 import unittest
-import fO2calculate as f
+import fO2calculate as fc
 import numpy as np
 import pandas as pd
 
@@ -87,7 +87,7 @@ class TestCreateSample(unittest.TestCase):
                                      'S':       0.0185
                                     })
 
-        self.sample = f.Sample(self.majors)
+        self.sample = fc.Sample(self.majors)
 
     def test_createSample(self):
         for ox in self.majors.index:
@@ -98,36 +98,36 @@ class TestCreateSample(unittest.TestCase):
         self.assertEqual(self.sample.default_units,'wtpt')
 
     def test_setdefaults_none_wtpt(self):
-        sample = f.Sample(self.majors, default_normalization='none',default_units='wtpt')
+        sample = fc.Sample(self.majors, default_normalization='none',default_units='wtpt')
         self.assertEqual(sample.default_normalization,'none')
         self.assertEqual(sample.default_units,'wtpt')
 
     def test_setdefaults_standard_mol(self):
-        sample = f.Sample(self.majors, default_normalization='standard',default_units='mol')
+        sample = fc.Sample(self.majors, default_normalization='standard',default_units='mol')
         self.assertEqual(sample.default_normalization,'standard')
         self.assertEqual(sample.default_units,'mol')
 
     def test_setdefaults_garbageNorm(self):
-        with self.assertRaises(f.core.InputError):
-            f.Sample(composition=self.majors,default_normalization='garbage')
+        with self.assertRaises(fc.core.InputError):
+            fc.Sample(composition=self.majors,default_normalization='garbage')
 
     def test_setdefaults_garbageType(self):
-        with self.assertRaises(f.core.InputError):
-            f.Sample(composition=self.majors,default_units='garbage')
+        with self.assertRaises(fc.core.InputError):
+            fc.Sample(composition=self.majors,default_units='garbage')
 
     def test_type_garbage(self):
-        with self.assertRaises(f.core.InputError):
-            f.Sample(composition=self.majors,units='garbage')
+        with self.assertRaises(fc.core.InputError):
+            fc.Sample(composition=self.majors,units='garbage')
 
     def test_type_wtpt(self):
-        sample = f.Sample(self.majors,units='wtpt')
+        sample = fc.Sample(self.majors,units='wtpt')
         for ox in self.majors.index:
             self.assertEqual(self.sample._composition[ox],self.majors[ox])
 
     def test_type_mol(self):
-        sample = f.Sample(self.majors_mol,units='mol')
+        sample = fc.Sample(self.majors_mol,units='mol')
         for ox in self.majors.index:
-            self.assertEqual(np.round(sample._composition[ox],4),np.round(self.majors_mol[ox],4))
+            self.assertEqual(np.round(sample.get_composition(species=ox, units='mol'),4),np.round(self.majors_mol[ox],4))
 
 
 class TestGetComposition(unittest.TestCase):
@@ -295,7 +295,7 @@ class TestGetComposition(unittest.TestCase):
                                            'S':       0.0
                                           })
 
-        self.sample = f.Sample(self.majors)
+        self.sample = fc.Sample(self.majors)
 
     def test_default(self):
         composition = self.sample.get_composition()

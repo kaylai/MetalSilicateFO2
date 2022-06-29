@@ -16,7 +16,7 @@ class Sample(object):
     """
 
     def __init__(self, composition, units='wtpt', default_normalization='none',
-                 default_units='wtpt'):
+                 default_units='wtpt', silence_warnings=False):
         """ Initialises the sample class.
 
         The composition is stored as wtpt. If the composition is provided as wtpt, no
@@ -51,6 +51,7 @@ class Sample(object):
             - mol
         """
 
+        self._silence_warnings = silence_warnings
         composition = deepcopy(composition)
 
         if isinstance(composition, dict):
@@ -68,10 +69,11 @@ class Sample(object):
 
         # check if ambigous volatiles are passed in, warn user
         ambiguous_voltiles = ['Cl', 'F', 'S']
-        for vol in ambiguous_voltiles:
-            if vol in composition.index:
-                w.warn("Element " + str(vol) + " was passed as part of sample composition. This" +
-                       " will be assumed to be part of the metal composition.")
+        if silence_warnings is False:
+            for vol in ambiguous_voltiles:
+                if vol in composition.index:
+                    w.warn("Element " + str(vol) + " was passed as part of sample composition. This" +
+                            " will be assumed to be part of the metal composition.")
 
         self.set_default_normalization(default_normalization)
         self.set_default_units(default_units)
@@ -115,7 +117,7 @@ class Sample(object):
 
     def get_composition(self, species=None, normalization=None, units=None,
                         exclude_volatiles=False, asSampleClass=False, oxide_masses={},
-                        how='combined'):
+                        how='combined', **kwargs):
         """ Returns the silicate and metal composition in the format requested, normalized as
         requested.
 
@@ -200,8 +202,8 @@ class Sample(object):
         # Check for a species being provided, if so, work out which units to return.
         if isinstance(species, str):
             if species in composition.index:  # if the requested species has a value, proceed
-                if units in ['mol'] or units is None:
-                    units = 'wtpt'
+                if species in core.elements or species in core.oxides:
+                    pass
                 else:
                     raise core.InputError(species + " was not recognised, check spelling, " +
                                           "capitalization and stoichiometry.")
@@ -238,7 +240,7 @@ class Sample(object):
                 if asSampleClass is False:
                     return final
                 else:
-                    return Sample(final)
+                    return Sample(final, **kwargs)
             elif isinstance(species, str):
                 if asSampleClass:
                     w.warn("Cannot return single species as Sample class. Returning as float.",
@@ -252,7 +254,7 @@ class Sample(object):
             if asSampleClass is False:
                 return final
             else:
-                return Sample(final)
+                return Sample(final, **kwargs)
 
         elif how is "metal":
             for i in final.index:
@@ -261,7 +263,7 @@ class Sample(object):
             if asSampleClass is False:
                 return final
             else:
-                return Sample(final)
+                return Sample(final, **kwargs)
 
     def get_silicate_composition(self, **kwargs):
         """
@@ -625,9 +627,9 @@ class Sample(object):
 
         # do normalization
         ox_sum = sum(wtpt_ox.values())
-        ox_final = {k: v / ox_sum for k, v in wtpt_ox.items()}
+        ox_final = {k: 100*v / ox_sum for k, v in wtpt_ox.items()}
         elem_sum = sum(wtpt_elem.values())
-        elem_final = {k: v / elem_sum for k, v in wtpt_elem.items()}
+        elem_final = {k: 100*v / elem_sum for k, v in wtpt_elem.items()}
 
         combined = {**ox_final, **elem_final}
         combined = pd.Series(combined)

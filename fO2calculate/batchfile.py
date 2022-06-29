@@ -1,5 +1,6 @@
 import pandas as pd
 import warnings as w
+import sys
 
 from fO2calculate import core
 from fO2calculate import sample_class
@@ -33,6 +34,52 @@ def rename_duplicates(df, suffix='-duplicate-'):
     appendents = (suffix + 
                   df.groupby(level=0).cumcount().astype(str).replace('0','')).replace(suffix, '')
     return df.set_index(df.index.astype(str) + appendents)
+
+class status_bar(object):
+    """Various styles of status bars that display the progress of a calculation
+    within a loop
+    """
+    def __init__():
+        pass
+
+    def status_bar(percent, sample_name=None, btext=None, barLen=20):
+        """
+        Prints an updating status bar to the terminal or jupyter notebook.
+
+        Parameters
+        ----------
+        percent: float
+            Percent value of progress from 0 to 1
+
+        sample_name: string
+            Name of the current sample being calculated
+
+        btext: string
+            Any extra text to display next to status bar
+
+        barLen: int
+            Length of bar to print
+        """
+        sys.stdout.write("\r")
+        sys.stdout.write("[{:<{}}] {:.0f}%".format("=" * int(barLen * percent),
+                                                   barLen, percent * 100))
+
+        sample_string = str(sample_name)
+        # Set max number of characters in sample name
+        max_name_length = 25
+        if len(str(sample_name)) >= max_name_length:
+            sample_string = str(sample_name)[0:max_name_length-1] + "..."
+
+        # Write out sample name and trailing spaces to cover contents of
+        # previous sample names left over on line
+        if sample_name is not None:
+            sys.stdout.write("  Working on sample " + sample_string +
+                             "                            ")
+        if btext is not None:
+            sys.stdout.write(" " + str(btext))
+        if percent == 1.0:
+            sys.stdout.write("\n")
+        sys.stdout.flush()
 
 class BatchFile(object):
     """Based on the batchfile class in VESIcal.
@@ -389,7 +436,8 @@ class BatchFile(object):
 
     def get_sample_composition(self, samplename, species=None,
                                normalization=None, units=None,
-                               asSampleClass=False, how='combined'):
+                               asSampleClass=False, how='combined',
+                               **kwargs):
         """
         Returns oxide composition of a single sample from a user-imported file
         as a dictionary
@@ -467,9 +515,9 @@ class BatchFile(object):
                 sample_elements.update({item: value})
                 sample_combined.update({item: value})
 
-        _sample = sample_class.Sample(sample_combined)
-        _sample_silicate = sample_class.Sample(sample_oxides)
-        _sample_metal = sample_class.Sample(sample_elements)
+        _sample = sample_class.Sample(sample_combined, **kwargs)
+        _sample_silicate = sample_class.Sample(sample_oxides, **kwargs)
+        _sample_metal = sample_class.Sample(sample_elements, **kwargs)
 
         # Get sample composition in terms of any species, units, and
         # normalization passed
@@ -482,26 +530,26 @@ class BatchFile(object):
                                                      normalization=normalization)
 
         if asSampleClass:
-            if how is 'combined':
-                return sample_class.Sample(return_sample)
-            elif how is 'silicate':
-                return sample_class.Sample(return_silicate)
-            elif how is 'metal':
-                return sample_class.Sample(return_metal)
+            if how == 'combined':
+                return sample_class.Sample(return_sample, **kwargs)
+            elif how == 'silicate':
+                return sample_class.Sample(return_silicate, **kwargs)
+            elif how == 'metal':
+                return sample_class.Sample(return_metal, **kwargs)
         else:
             if species is None:
-                if how is 'combined':
+                if how == 'combined':
                     return dict(return_sample)
-                elif how is 'silicate':
+                elif how == 'silicate':
                     return dict(return_silicate)
-                elif how is 'metal':
+                elif how == 'metal':
                     return dict(return_metal)
             elif isinstance(species, str):
-                if how is 'combined':
+                if how == 'combined':
                     return return_sample
-                elif how is 'silicate':
+                elif how == 'silicate':
                     return return_silicate
-                elif how is 'metal':
+                elif how == 'metal':
                     return return_metal
 
     def get_silicate_composition(self, **kwargs):
